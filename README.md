@@ -59,7 +59,11 @@ digitalocean:droplet
 
 ### Examples
 Deploy an AWS EC2 instance that will have first-domain.com point to it and forward to second-domain.com:
-`python3 ./script.py --deploy aws:ec2:redirector --aws-access-key <AWS_ACCESS_KEY> --aws-secret-key <AWS_SECRET_KEY> --redirector-domain first-domain.com --redirector-target second-domain.com`
+```bash
+python3 ./script.py --deploy aws:ec2:redirector --aws-access-key <AWS_ACCESS_KEY> --aws-secret-key <AWS_SECRET_KEY> --redirector-domain first-domain.com --redirector-target second-domain.com
+```
 
 Deploy an Azure CDN that will have a custom domain of www.first-domain.com pointing to an Azure edge my-edge and forward to second-domain.com and print all Terraform and Ansible output:
-`python3 ./script.py --deploy azure:cdn:redirector --redirector-domain first-domain.com --cdn-endpoint-name my-edge --redirector-target second-domain.com -v`
+```bash
+python3 ./script.py --deploy azure:cdn:redirector --redirector-domain first-domain.com --cdn-endpoint-name my-edge --redirector-target second-domain.com -v
+```
