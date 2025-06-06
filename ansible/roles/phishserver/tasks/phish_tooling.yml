@@ -1,0 +1,33 @@
+- name: Clone GoPhish repo & install
+  ansible.builtin.git:
+    repo: 'https://github.com/gophish/gophish.git'
+    dest: /opt/gophish
+    
+- name: Build GoPhish
+  ansible.builtin.shell: tmux send-key -t phish:gophish 'cd /opt/gophish/' Enter; tmux send-key -t phish:gophish 'go build' Enter; 
+
+- name: Wait until GoPhish binary exists
+  ansible.builtin.wait_for:
+    path: /opt/gophish/gophish
+    state: present
+    
+- name: Configure GoPhish
+  ansible.builtin.shell: tmux send-key -t phish:gophish 'sed -i "s/0.0.0.0:80/0.0.0.0:8080/g" config.json' Enter; tmux send-key -t phish:gophish '/opt/gophish/gophish 2>&1 | tee /opt/gophish/gophish.log' Enter
+  
+- name: Clone Evilginx repo & install
+  ansible.builtin.git:
+    repo: 'https://github.com/kgretzky/evilginx2.git'
+    dest: /opt/evilginx2
+    
+
+- name: Start Evilginx
+  ansible.builtin.shell: tmux send-key -t phish:evilginx 'cd /opt/evilginx2' Enter; tmux send-key -t phish:evilginx 'go build' Enter; tmux send-key -t phish:evilginx '/opt/evilginx2/evilginx' 
+
+  
+- name: Extract 16-character alphanumeric string from gophish.log
+  ansible.builtin.shell: "grep -oE '[a-zA-Z0-9]{16}' /opt/gophish/gophish.log | head -n 1"
+  register: gophish_pass
+
+- name: Print GoPhish Admin Password
+  ansible.builtin.debug:
+    msg: "GoPhish Admin Password: {{ gophish_pass.stdout }}"

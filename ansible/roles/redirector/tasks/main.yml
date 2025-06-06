@@ -1,0 +1,106 @@
+- name: Redirector Setup
+  ansible.builtin.debug:
+    msg: "Setting up Apache on Redirector"
+
+- name: Install Tmux, Apache, Certbot & Zsh
+  ansible.builtin.apt:
+    update_cache: true
+    pkg:
+      - tmux
+      - apache2
+      - certbot
+      - python3-certbot-apache
+      - zsh
+
+- name: Enable Apache rewrite module
+  command: a2enmod rewrite
+  notify: Restart Apache
+  args:
+    creates: /etc/apache2/mods-enabled/rewrite.load
+
+- name: Add redirect rules
+  template:
+    src: redirect.rules
+    dest: /etc/apache2/redirect.rules
+
+- name: Enable required Apache modules
+  ansible.builtin.command: a2enmod {{ item }}
+  loop:
+    - ssl
+    - proxy
+    - proxy_http
+    - headers
+    - rewrite
+  notify: Restart Apache
+
+- name: Ensure redirector web root exists
+  ansible.builtin.file:
+    path: "/var/www/{{ redirect_domain }}"
+    state: directory
+    mode: '0755'
+
+- name: Ensure logs directory exists
+  ansible.builtin.file:
+    path: "/var/www/{{ redirect_domain }}/logs"
+    state: directory
+    mode: '0755'
+
+- name: Add error.html
+  template:
+    src: error.html
+    dest: /var/www/{{ redirect_domain }}/error.html
+    mode: "0644"
+  notify: Restart Apache
+
+# Deploy HTTP-only Apache virtual host for certbot validation
+- name: Deploy HTTP virtual host for certbot validation
+  copy:
+    dest: /etc/apache2/sites-available/000-default.conf
+    content: |
+      <VirtualHost *:80>
+          ServerName {{ redirect_domain }}
+          ServerAlias www.{{ redirect_domain }}
+          DocumentRoot /var/www/{{ redirect_domain }}
+      </VirtualHost>
+  notify: Reload Apache
+
+- name: Enable HTTP virtual host
+  file:
+    src: /etc/apache2/sites-available/000-default.conf
+    dest: /etc/apache2/sites-enabled/000-default.conf
+    state: link
+    force: true
+
+- name: Add SSL virtual host config
+  template:
+    src: redirect.conf.j2
+    dest: /etc/apache2/sites-available/000-default-ssl.conf
+    mode: "0644"
+
+# Remove dummy SSL files if they exist
+- name: Remove dummy SSL options file if exists
+  file:
+    path: /etc/letsencrypt/options-ssl-apache.conf
+    state: absent
+
+- name: Remove dummy cert directory if exists
+  file:
+    path: "/etc/letsencrypt/live/{{ redirect_domain }}"
+    state: absent
+
+# Restart Apache with HTTP only config
+- name: Restart Apache with HTTP only config
+  systemd:
+    name: apache2
+    state: restarted
+
+- name: Ensure Apache is running and enabled
+  systemd:
+    name: apache2
+    state: started
+    enabled: yes
+
+- name: Start Tmux
+  environment:
+    TMUX_TMPDIR: /tmp/ansible/tmux
+  ansible.builtin.shell: tmux new-session -d -s redirector -n window1; tmux new-window -d -t redirector -n window2; tmux new-window -d -t redirector -n window3
