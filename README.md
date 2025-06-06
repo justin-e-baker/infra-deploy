@@ -2,7 +2,14 @@
 Dynamically deploy redirector or phishserver
 
 ## Features
-This script is designed (i.e. written by ChatGPT) to deploy infrastructure and configure them according to the specified role, either redirector or phishserver. Available options are AWS EC2 instances and Lambda functions, Azure VMs and CDNs, and DigitalOcean Droplets. Applicable follow on commands are provided according to the specific resource deployed. All deployments and destructions are timestamped and logged into the logs directory.
+This script is designed (i.e. written by ChatGPT) to deploy infrastructure and configure them according to the specified role, either redirector or phishserver. Available options:
+* AWS EC2 instances
+* AWS Lambda functions
+* Azure VMs
+* Azure CDNs
+* DigitalOcean Droplets.
+
+Applicable follow on commands are provided according to the specific resource deployed. All deployments and destructions are timestamped and logged into the logs directory.
 
 ### Redirector
 * AWS EC2 / Azure VM / DigitalOcean Droplet: Stands up an Apache server that forwards traffic to a specified target. Also installs Tmux, Zsh, and Certbot for HTTPS after Ansible. The Ansible users role will be executed on this deployment.
