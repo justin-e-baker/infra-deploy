@@ -7,7 +7,7 @@ This script is designed (i.e. written by ChatGPT) to deploy infrastructure and c
 * AWS Lambda functions
 * Azure VMs
 * Azure CDNs
-* DigitalOcean Droplets.
+* DigitalOcean Droplets
 
 Applicable follow on commands are provided according to the specific resource deployed. All deployments and destructions are timestamped and logged into the logs directory.
 
