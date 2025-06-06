@@ -1,0 +1,77 @@
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName {{ redirect_domain }}
+
+	SSLProxyEngine on
+	SSLProxyVerify none
+	SSLProxyCheckPeerCN off
+	SSLProxyCheckPeerName off
+	ProxyPreserveHost on
+    RewriteEngine On
+    #RewriteRule ^/(.*)$ {{ redirect_target }}/$1 [R=301,L]
+	
+	# Add IP rule blocking - Blocks VT and other various security companies, download https://gist.github.com/curi0usJack/971385e8334e189d93a6cb4671238b10 as /etc/apache2/redirect.rules
+	Include /etc/apache2/redirect.rules
+	
+	# Define where unwanted traffic excluding redirect.rules is pushed
+	Define PUSH_UNWANTED https://www.microsoft.com/en-us
+	
+	# Define next redirector in chain pushing C2 traffic
+	Define REDIR_TARGET {{ redirect_target }}
+	
+	# Define the paths for the CS GET and POST requests, check malleable profile
+	Define CS_GET /jquery/user/preferences
+	Define CS_POST /api/v2/jquery/settings/update
+	
+	# First Rule: Useragent Check
+	RewriteCond %{HTTP_USER_AGENT}(google|yandex|bingbot|Googlebot|bot|spider|simple|BBBike|wget|cloudfront|curl|Python|Wget|crawl|baidu|Lynx|xforce|HTTrack|Slackbot|netcraft|NetcraftSurveyAgent|Netcraft) [NC]
+	RewriteRule ^(.*)$ ${PUSH_UNWANTED}
+	
+	# Second Rule: Custom Header Check for Access-X-Control
+    RewriteCond %{HTTP:Access-X-Control} ^True$ [NC]
+    RewriteRule ^(.*)$ %{REQUEST_SCHEME}://${REDIR_TARGET} [P,L]
+		
+	# Third Rule: URI Check for GET Request
+	RewriteCond %{REQUEST_URI} ^${CS_GET}.*$
+	RewriteRule ^${CS_GET}.*$ %{REQUEST_SCHEME}://${REDIR_TARGET}%{REQUEST_URI} [P]
+	ProxyPassReverse / %{REQUEST_SCHEME}://${REDIR_TARGET}
+
+	# Forth Rule: URI Check for POST Request
+	RewriteCond %{REQUEST_URI} ^${CS_POST}.*$
+	RewriteRule ^${CS_POST}.*$ %{REQUEST_SCHEME}://${REDIR_TARGET}%{REQUEST_URI} [P]
+	ProxyPassReverse / %{REQUEST_SCHEME}://${REDIR_TARGET}
+
+			ServerAdmin webmaster@localhost
+			ServerName {{ redirect_domain }}
+			ServerAlias www.{{ redirect_domain }}
+			DocumentRoot /var/www/{{ redirect_domain }}
+
+	# Custom logging location
+	ErrorLog /var/www/{{ redirect_domain }}/logs/error.log
+	CustomLog /var/www/{{ redirect_domain }}/logs/access.log combined
+
+	# Define directory to hold logs and deny access to it
+	<Directory /var/www/{{ redirect_domain }}/logs>
+	Order deny,allow
+	Deny from all
+	</Directory>
+
+	SSLCertificateFile /etc/letsencrypt/live/{{ redirect_domain }}/fullchain.pem
+	SSLCertificateKeyFile /etc/letsencrypt/live/{{ redirect_domain }}/privkey.pem
+	Include /etc/letsencrypt/options-ssl-apache.conf
+	Header always set Strict-Transport-Security "max-age=3153600"
+	Header always set Content-Security-Policy upgrade-insecure-requests
+
+	# Adding in Security Headers, should match what is in the server section of the CS profile, example below
+	Header always set Strict-Transport-Security "max-age=31536000"
+	Header always set Content-Security-Policy upgrade-insecure-requests
+	Header always set X-XSS-Protection "1; mode=block"
+	Header always set X-Frame-Options "SAMEORIGIN"
+	Header always set X-Content-Type-Options "nosniff"
+	Header always set Referrer-Policy "strict-origin"
+	Header set Content-Type "text/html; charset=utf-8"
+
+	# Set 404 Error Page
+	ErrorDocument 404 /error.html
+</VirtualHost>
+</IfModule>

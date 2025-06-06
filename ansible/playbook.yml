@@ -1,0 +1,23 @@
+- name: Configure local users
+  hosts: all
+  become: yes
+  roles:
+    - users
+
+#- name: Configure C2 server
+#  hosts: c2
+#  become: yes
+#  roles:
+#    - c2
+
+- name: Configure redirector
+  hosts: redirector
+  become: yes
+  roles:
+    - redirector
+
+- name: Configure phish server
+  hosts: phishserver
+  become: yes
+  roles:
+    - phishserver

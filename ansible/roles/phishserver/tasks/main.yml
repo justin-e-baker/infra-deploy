@@ -1,0 +1,19 @@
+- name: Phish Server Setup
+  ansible.builtin.debug:
+    msg: "Setting up Phish server"
+
+- name: Install Tmux, Go & Zsh
+  ansible.builtin.apt:
+    update-cache: true
+    pkg:
+    - tmux
+    - golang-go
+    - zsh
+
+- name: Start Tmux
+  environment:
+    TMUX_TMPDIR: /tmp/ansible/tmux
+  ansible.builtin.shell: tmux new-session -d -s phish -n gophish; tmux new-window -d -t phish -n evilginx; tmux new-window -d -t phish -n misc
+  
+- name: Install Phishing Tools
+  include_tasks: phish_tooling.yml

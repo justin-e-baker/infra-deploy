@@ -1,0 +1,6 @@
+users:
+  - username: <user>
+    shell: /usr/bin/zsh
+    groups: ["sudo"]
+    ssh_key: "<ssh pub key>"
+    password: '<output of mkpasswd --method=sha-512>'

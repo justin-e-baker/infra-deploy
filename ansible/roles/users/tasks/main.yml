@@ -1,0 +1,17 @@
+- name: Create users
+  user:
+    name: "{{ item.username }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    groups: "{{ item.groups | default([]) }}"
+    append: yes
+    password: "{{ item.password }}"
+    state: present
+    create_home: yes
+  loop: "{{ users }}"
+
+- name: Add authorized SSH keys
+  authorized_key:
+    user: "{{ item.username }}"
+    key: "{{ item.ssh_key }}"
+    state: present
+  loop: "{{ users }}"
