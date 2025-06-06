@@ -1,5 +1,5 @@
 # infra-deploy
-Make 
+Dynamically deploy redirector or phishserver
 
 ## Features
 This script is designed (i.e. written by ChatGPT) to deploy infrastructure and configure them according to the specified role, either redirector or phishserver. Available options are AWS EC2 instances and Lambda functions, Azure VMs and CDNs, and DigitalOcean Droplets. Applicable follow on commands are provided according to the specific resource deployed. All deployments and destructions are timestamped and logged into the logs directory.
