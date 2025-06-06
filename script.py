@@ -266,6 +266,20 @@ def prepare_env_and_vars(provider, resource, args, env_vars):
 
     return local_env, extra_vars
 
+def validate_credentials_for_deployment(provider, resource, args, env):
+    if provider == "aws":
+        if not (args.aws_access_key or env.get("AWS_ACCESS_KEY_ID")):
+            log(f"--aws-access-key is required for {provider}:{resource}", "ERROR")
+            sys.exit(1)
+        if not (args.aws_secret_key or env.get("AWS_SECRET_ACCESS_KEY")):
+            log(f"--aws-secret-key is required for {provider}:{resource}", "ERROR")
+            sys.exit(1)
+
+    elif provider == "digitalocean":
+        if not (args.do_token or env.get("DIGITALOCEAN_TOKEN")):
+            log(f"--do-token is required for {provider}:{resource}", "ERROR")
+            sys.exit(1)
+
 def main():
     global ACTION_TYPE
     redirector_resources = []
@@ -322,6 +336,9 @@ def main():
                 if provider == "azure" and resource == "cdn":
                     if not args.redirector_domain:
                         log("--redirector-domain is required for azure:cdn redirector.", "ERROR")
+                        sys.exit(1)                
+                    if not args.redirector_target:
+                        log("--redirector-target is required for azure:cdn redirector.", "ERROR")
                         sys.exit(1)
                     if not args.cdn_endpoint_name:
                         log("--cdn-endpoint-name is required for azure:cdn redirector.", "ERROR")
@@ -370,6 +387,7 @@ def main():
         deployments = parse_deploy_argument(args.deploy)
 
         for provider, resource, role, path in deployments:
+            validate_credentials_for_deployment(provider, resource, args, base_env_vars)
             env_vars, extra_vars = prepare_env_and_vars(provider, resource, args, base_env_vars)
             try:
                 if args.dry_run:
@@ -403,6 +421,7 @@ def main():
     if args.destroy:
         deployments = parse_deploy_argument(args.destroy)
         for provider, resource, role, path in deployments:
+            validate_credentials_for_deployment(provider, resource, args, base_env_vars)
             env_vars, extra_vars = prepare_env_and_vars(provider, resource, args, base_env_vars)
             try:
                 if args.dry_run:
