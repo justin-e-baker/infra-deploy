@@ -79,3 +79,4 @@ python3 ./script.py --deploy azure:cdn:redirector --redirector-domain first-doma
 * Azure App Service
 * Azure Function
 * AWS CloudFront
+* Google Cloud
