@@ -74,3 +74,8 @@ Deploy an Azure CDN that will have a custom domain of www.first-domain.com point
 ```bash
 python3 ./script.py --deploy azure:cdn:redirector --redirector-domain first-domain.com --cdn-endpoint-name my-edge --redirector-target second-domain.com -v
 ```
+
+## To do
+* Azure App Service
+* Azure Function
+* AWS CloudFront
