@@ -59,12 +59,12 @@ options:
   -v, --verbose
 
 [Redirectors]
-  [Smart (OPSEC focused)]
+  [Smart] (OPSEC focused)
    aws:ec2
    azure:vm
    digitalocean:droplet
 
-  [Dumb (Proxy everything)]
+  [Dumb] (Proxy everything)
    aws:api_gateway
    aws:cloudfront
    azure:app
