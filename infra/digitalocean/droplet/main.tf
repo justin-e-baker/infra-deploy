@@ -1,6 +1,6 @@
 #create a droplet resource
 resource "digitalocean_droplet" "Droplet" {
-    image = "ubuntu-24-10-x64"
+    image = "ubuntu-24-04-x64"
     name = "Droplet"
     region = "nyc3"
     size = "s-2vcpu-4gb"

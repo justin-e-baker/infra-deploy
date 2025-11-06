@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import subprocess
 import argparse
 import os
@@ -9,477 +8,434 @@ import re
 import time
 from datetime import datetime
 
-INFRA_MAP = {
-    "aws": {"ec2": "infra/aws/ec2", "lambda": "infra/aws/lambda"},
-    "azure": {"vm": "infra/azure/vm", "cdn": "infra/azure/cdn"},
-    "digitalocean": {"droplet": "infra/digitalocean/droplet"},
-}
 
-ANSIBLE_USER_MAP = {
-    "azure": "admin-user",
-    "aws": "ubuntu",
-    "digitalocean": "root",
+# ==============================================
+# MAPPINGS
+# ==============================================
+INFRA_MAP = {
+    "aws": {
+        "ec2": "infra/aws/ec2",
+        "api_gateway": "infra/aws/api_gateway",
+        "cloudfront": "infra/aws/cloudfront"     
+    },
+    "azure": {
+        "vm": "infra/azure/vm",
+        "app": "infra/azure/app"                 
+    },
+    "digitalocean": {"droplet": "infra/digitalocean/droplet"},
 }
 
 ROLE_MAP = {
     "redirector": [
-        "aws:ec2",
-        "aws:lambda",
-        "azure:cdn",
-        "azure:vm",
+        "aws:ec2", "aws:api_gateway", "aws:cloudfront",
+        "azure:vm", "azure:app",
         "digitalocean:droplet"
     ],
-    "phishserver": [
-        "aws:ec2",
-        "azure:vm",
-        "digitalocean:droplet"
-    ]
+    "phishserver": ["aws:ec2", "azure:vm", "digitalocean:droplet"]
 }
 
+# ==============================================
+# GLOBALS
+# ==============================================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 inventory_file = os.path.join(SCRIPT_DIR, "ansible", "inventory.ini")
 redirector_vars_file = os.path.join(SCRIPT_DIR, "ansible", "group_vars", "redirector.yml")
 playbook_file = os.path.join(SCRIPT_DIR, "ansible", "playbook.yml")
-
 ACTION_TYPE = "deploy"
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_path = os.path.join(SCRIPT_DIR, f"{ACTION_TYPE}_{timestamp}.txt")
 log_file = None
 
-def init_log_file(action_type):
-    global log_file, log_path
+# ==============================================
+# LOGGING
+# ==============================================
+def init_log_file(action_type, provider=None, resource=None):
+    global log_file
     logs_dir = os.path.join(SCRIPT_DIR, "logs")
-    os.makedirs(logs_dir, exist_ok=True)  # Create logs/ if not exist
-    log_path = os.path.join(logs_dir, f"{action_type}_{timestamp}.txt")
+    os.makedirs(logs_dir, exist_ok=True)
+
+    parts = [action_type]
+    if provider: parts.append(provider)
+    if resource: parts.append(resource)
+    parts.append(timestamp)
+
+    log_filename = "_".join(parts) + ".txt"
+    log_path = os.path.join(logs_dir, log_filename)
     log_file = open(log_path, "w")
 
+class bcolors:
+    HEADER    = '\033[95m'
+    OKBLUE    = '\033[94m'
+    OKCYAN    = '\033[96m'
+    OKGREEN   = '\033[92m'
+    WARNING   = '\033[93m'
+    FAIL      = '\033[91m'
+    ENDC      = '\033[0m'
+    BOLD      = '\033[1m'
 
 def log(message, level="INFO"):
-    color_codes = {
-        "INFO": "\033[93m",
-        "ERROR": "\033[91m",
-        "SUCCESS": "\033[92m",
-        "FOLLOW ON": "\033[94m"
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    colors = {
+        "INFO":      bcolors.OKBLUE,
+        "SUCCESS":   bcolors.OKGREEN,
+        "WARN":      bcolors.WARNING,
+        "ERROR":     bcolors.FAIL,
+        "DEBUG":     bcolors.OKCYAN,
+        "FOLLOW ON": bcolors.HEADER
     }
-    tag = f"[{level}]"
-    colored_tag = f"{color_codes.get(level, '')}{tag}\033[0m"
-    output = f"{colored_tag} {message}"
-    plain_output = f"{tag} {message}"
-    print(output)
-    log_file.write(plain_output + "\n")
-    log_file.flush()
+    color = colors.get(level.upper(), bcolors.OKBLUE)
+    prefix = f"[{level}]"
 
+    os.system('')  
+    print(f"{color}{timestamp} {prefix:<8} {message}{bcolors.ENDC}")
+# ==============================================
+# HELPERS
+# ==============================================
 def run_command(cmd, env=None, verbose=False, cwd=None):
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-        cwd=cwd
-    )
-    output_lines = []
-    for line in process.stdout:
-        output_lines.append(line)
-        if verbose:
-            print(line, end='')
-    process.wait()
-    output = ''.join(output_lines)
-    log_file.write(output)
-    log_file.flush()
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, cmd)
-    return output
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, env=env, cwd=cwd)
+    out = []
+    for line in p.stdout:
+        out.append(line)
+        if verbose: print(line, end='')
+    p.wait()
+    if log_file: log_file.write(''.join(out))
+    if p.returncode: raise subprocess.CalledProcessError(p.returncode, cmd)
+    return ''.join(out)
 
 def run_terraform(path, env_vars, destroy=False, extra_vars=None, verbose=False):
-    log(f"{'Destroying' if destroy else 'Deploying'} Terraform in: {path}")
+    log(f"{'Destroying' if destroy else 'Deploying'} {path.split(os.sep)[-1]}")
     cmd = ["terraform", "destroy" if destroy else "apply", "-auto-approve"]
     if extra_vars:
-        for k, v in extra_vars.items():
-            cmd.extend(["-var", f"{k}={v}"])
-    run_command(["terraform", "init"], env=env_vars, verbose=verbose, cwd=path)
+        for k,v in extra_vars.items():
+            cmd += ["-var", f"{k}={v}"]
+    run_command(["terraform","init"], env=env_vars, verbose=verbose, cwd=path)
     run_command(cmd, env=env_vars, verbose=verbose, cwd=path)
-    log(f"Terraform {'destroy' if destroy else 'apply'} completed in {path}", "SUCCESS")
+    log("Terraform done", "SUCCESS")
 
-def extract_ip_from_output(output_json):
-    for val in output_json.values():
-        if isinstance(val, dict) and "value" in val:
-            match = re.search(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b", str(val["value"]))
-            if match:
-                return match.group(0)
+def extract_ip(out): 
+    for v in out.values():
+        if isinstance(v,dict) and "value" in v:
+            m = re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", str(v["value"]))
+            if m: return m.group(0)
     return None
 
-def extract_lambda_url(output_json):
-    for val in output_json.values():
-        if isinstance(val, dict) and "value" in val:
-            val_str = str(val["value"])
-            if val_str.startswith("https://"):
-                return val_str
+def extract_url(out):
+    for v in out.values():
+        if isinstance(v,dict) and "value" in v:
+            s = str(v["value"])
+            if s.startswith("https://"): return s
     return None
 
 def extract_outputs(path):
-    output = run_command(["terraform", "output", "-json"], cwd=path)
-    return json.loads(output)
+    return json.loads(run_command(["terraform","output","-json"], cwd=path))
+
+# ==============================================
+# INVENTORY & GROUP VARS
+# ==============================================
+ANSIBLE_USER_MAP = {"azure":"admin-user","aws":"ubuntu","digitalocean":"root"}
 
 def build_inventory(hosts_by_role):
-    log("Writing Ansible inventory...")
+    log("Writing inventory...")
     os.makedirs(os.path.dirname(inventory_file), exist_ok=True)
-    with open(inventory_file, "w") as f:
-        for role, hosts in hosts_by_role.items():
+    with open(inventory_file,"w") as f:
+        for role,hosts in hosts_by_role.items():
             f.write(f"[{role}]\n")
-            for ip, provider, ssh_key in hosts:
-                ansible_user = ANSIBLE_USER_MAP.get(provider, "root")
-                f.write(f"{ip} ansible_user={ansible_user} ansible_ssh_private_key_file={ssh_key} ansible_port=22 ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n")
+            for ip,prov,key in hosts:
+                user = ANSIBLE_USER_MAP.get(prov,"root")
+                f.write(f"{ip} ansible_user={user} ansible_ssh_private_key_file={key} "
+                        "ansible_port=22 ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n")
             f.write("\n")
-    log("Ansible inventory written.", "SUCCESS")
+    log("Inventory ready","SUCCESS")
 
-def set_redirector_group_vars(domain, target):
+def set_redirector_group_vars(domain, target, get_path="/", post_path="/", custom_header=None):
     os.makedirs(os.path.dirname(redirector_vars_file), exist_ok=True)
-    with open(redirector_vars_file, "w") as f:
+    with open(redirector_vars_file,"w") as f:
         f.write(f"redirect_domain: \"{domain}\"\n")
         f.write(f"redirect_target: \"{target}\"\n")
-    log("Redirector group vars configured.", "SUCCESS")
+        f.write(f"get_path: \"{get_path}\"\n")
+        f.write(f"post_path: \"{post_path}\"\n")
+        if custom_header:
+            name, val = custom_header.split(":",1)
+            f.write(f"custom_header_name: \"{name.strip()}\"\n")
+            f.write(f"custom_header_value: \"{val.strip()}\"\n")
+    log("group_vars written","SUCCESS")
 
 def run_ansible(verbose=False):
     if not os.path.exists(inventory_file):
-        log("No inventory file. Skipping Ansible.", "ERROR")
+        log("No inventory → skip Ansible","INFO")
         return
-    log("Running Ansible playbook...")
-    run_command(["ansible-playbook", "-i", inventory_file, playbook_file], verbose=verbose)
-    log("Ansible provisioning complete.", "SUCCESS")
+    log("Running playbook...")
+    run_command(["ansible-playbook","-i",inventory_file,playbook_file], verbose=verbose)
+    log("Ansible finished","SUCCESS")
 
-def show_followup(provider, resource, role, domain, target, ip=None, cdn_endpoint_name=None, lambda_url=None, access_command=None, ssh_key=None):
+# ==============================================
+# FOLLOW-UP
+# ==============================================
+def show_followup(provider, resource, role, domain, target, ip,
+                  api_gateway_url=None, cloudfront_url=None, proxy_app_url=None,
+                  cdn_endpoint_name=None, get_path=None, post_path=None,
+                  ssh_key=None, custom_header=None):
     ansible_user = ANSIBLE_USER_MAP.get(provider, "root")
-    # Use access_command if provided, else fallback to ssh line if applicable
-    if access_command:
-        ssh_line = access_command
-    else:
-        ssh_line = (
-            f"ssh -i {ssh_key} {ansible_user}@{ip}"
-            if ssh_key and ip and resource not in ("lambda", "cdn") else ""
-        )
-
+    ssh_line = (
+        f"ssh -i {ssh_key} {ansible_user}@{ip}"
+        if ssh_key and ip and resource not in ("api_gateway", "cloudfront", "app") else ""
+    )
     if role == "redirector":
-        if provider == "azure" and resource == "cdn":
-            message = f"\n{domain} will point to {cdn_endpoint_name}.azureedge.net, which will forward traffic to {target}.\n"
-        elif provider == "aws" and resource == "lambda":
-            message = f"\n{lambda_url} will forward traffic to {target}.\n"
+        path_info = f"GET: {get_path} | POST: {post_path}"
+        if provider == "aws" and resource == "api_gateway":
+            message = f"\n{api_gateway_url} will forward traffic to {target}.\nPaths: {path_info}\n"
+        elif provider == "aws" and resource == "cloudfront":
+            message = f"\n{cloudfront_url} will forward traffic to {target}.\nPaths: {path_info}\n"
+        elif provider == "azure" and resource == "app":
+            message = f"\n{api_gateway_url} will forward traffic to {target}.\nPaths: {path_info}\n"
         else:
             message = f"""
-Ensure your domain is pointing to: {ip}
+\n# Ensure your domain is pointing to: {ip}
 
-Access:
+# Paths: {path_info}
+
+# Access:
 {ssh_line}
 
-Verify DNS:
+# Verify DNS:
 nslookup {domain}
 
-Certbot:
+# Certbot:
 sudo certbot --apache --non-interactive --agree-tos -m admin@{domain} -d {domain} --redirect
 
-Replace SSL vhost:
+# Replace SSL vhost:
 sudo cp /etc/apache2/sites-available/000-default-ssl.conf /etc/apache2/sites-available/000-default-le-ssl.conf
 
-Reload Apache:
+# Reload Apache:
 sudo systemctl restart apache2
 
-Edit redirect rules if needed:
+# Edit redirect rules if needed. May need to comment out the deployed resource IP:
 sudo vim /etc/apache2/redirect.rules
 
-Test Apache config (should hit target):
-curl --header "Access-X-Control: True" -A "Mozilla/5.0" https://{domain}/jquery/user/preferences
+# Test Apache config (should hit target):
+curl -X GET --header "{custom_header}" -A "Mozilla/5.0" https://{domain}{get_path} # GET test
+curl -X POST --header "{custom_header}" -A "Mozilla/5.0" https://{domain}{post_path} -d "test" # POST test
 
-Access tmux:
+# Access tmux:
 sudo tmux a -t redirector
 """.strip()
     elif role == "phishserver":
         message = f"""
 Server deployed at: {ip}
-
 Access:
 {ssh_line}
-
 Access tmux:
 sudo tmux a -t phish
 """.strip()
     else:
         message = f"\nDeployment complete for {provider}:{resource}:{role}.\n"
+    log("\n" + message.lstrip("\n"), "FOLLOW ON")
 
-    log(message, "FOLLOW ON")
+# ==============================================
+# ARGUMENT PARSING & VALIDATION
+# ==============================================
+def parse_deploy_argument(lst):
+    out = []
+    for s in lst:
+        try: p,r,role = s.split(":")
+        except: log(f"Bad format: {s}","ERROR"); sys.exit(1)
+        if p not in INFRA_MAP or r not in INFRA_MAP[p]:
+            log(f"Unknown: {p}:{r}","ERROR"); sys.exit(1)
+        out.append((p,r,role, os.path.join(SCRIPT_DIR, INFRA_MAP[p][r])))
+    return out
 
+APACHE_RES = {"ec2","vm","droplet"}
+BLIND_RES  = {"api_gateway","cloudfront","cdn","app"}
 
+def prepare_env_and_vars(prov, res, args, env):
+    e = env.copy()
+    v = {"get_path":args.get_path, "post_path":args.post_path}
+    if prov=="aws":
+        if args.aws_access_key:  e["AWS_ACCESS_KEY_ID"] = args.aws_access_key
+        if args.aws_secret_key: e["AWS_SECRET_ACCESS_KEY"] = args.aws_secret_key
+        v.update({"aws_access_key":args.aws_access_key or "",
+                  "aws_secret_key":args.aws_secret_key or ""})
+        if res in ("api_gateway"):
+            v["redirector_target"] = args.redirect_to
+        if res in ("cloudfront"):
+            v["redirector_target"] = args.redirect_to
+            v["get_path"] = args.get_path or "/api"
+            v["post_path"] = args.post_path or "/submit"
+        if res=="ec2":
+            v["redirect_to"] = args.redirect_to
+            v["pvt_key"] = args.ssh_key or ""
+    elif prov=="digitalocean":
+        if args.do_token: e["DIGITALOCEAN_TOKEN"]=args.do_token
+        v.update({"do_token":args.do_token or "", "pvt_key":args.ssh_key or ""})
+        v["redirect_to"] = args.redirect_to
+    elif prov=="azure":
+        if res=="app":
+            v["redirector_target"] = args.redirect_to
+            if args.get_path is not None:
+                v["get_path"] = args.get_path
+            if args.post_path is not None:
+                v["post_path"] = args.post_path 
+        if res=="vm":
+            v["redirect_to"] = args.redirect_to
+            v["pvt_key"]=args.ssh_key or ""
+    return e,v
 
-def parse_deploy_argument(deploy_list):
-    deployments = []
-    for item in deploy_list:
-        try:
-            provider, resource, role = item.split(":")
-        except ValueError:
-            log(f"Invalid deploy argument: {item}. Use provider:resource:role format.", "ERROR")
-            sys.exit(1)
-        if provider not in INFRA_MAP or resource not in INFRA_MAP[provider]:
-            log(f"No path mapping for {provider}:{resource}", "ERROR")
-            sys.exit(1)
-        path = os.path.join(SCRIPT_DIR, INFRA_MAP[provider][resource])
-        deployments.append((provider, resource, role, path))
-    return deployments
-
-def prepare_env_and_vars(provider, resource, args, env_vars):
-    # Prepare env_vars copy and extra_vars for terraform based on provider/resource and args
-    # Returns (env_vars_copy, extra_vars_dict)
-    local_env = env_vars.copy()
-    extra_vars = {}
-
-    # Set environment variables for providers
-    if provider == "aws":
-        if args.aws_access_key and args.aws_secret_key:
-            local_env.update({
-                "AWS_ACCESS_KEY_ID": args.aws_access_key,
-                "AWS_SECRET_ACCESS_KEY": args.aws_secret_key
-            })
-        extra_vars = {
-            "aws_access_key": args.aws_access_key or "",
-            "aws_secret_key": args.aws_secret_key or ""
-        }
-        if resource == "lambda":
-            extra_vars["redirector_target"] = args.redirector_target or local_env.get("REDIRECT_TARGET", "")
-        else:
-            extra_vars["pvt_key"] = args.ssh_key or ""
-
-    elif provider == "digitalocean":
-        if args.do_token:
-            local_env["DIGITALOCEAN_TOKEN"] = args.do_token
-        extra_vars = {
-            "do_token": args.do_token or "",
-            "pvt_key": args.ssh_key or ""
-        }
-
-    elif provider == "azure":
-        extra_vars = {}
-        if resource == "cdn":
-            extra_vars = {
-                "origin_hostname": args.redirector_target,
-                "origin_host_header": args.redirector_target,
-                "custom_domain_name": args.redirector_domain,
-                "cdn_endpoint_name": args.cdn_endpoint_name or "defaultcdn"
-            }
-
-    return local_env, extra_vars
-
-def validate_credentials_for_deployment(provider, resource, args, env):
-    if provider == "aws":
-        if not (args.aws_access_key or env.get("AWS_ACCESS_KEY_ID")):
-            log(f"--aws-access-key is required for {provider}:{resource}", "ERROR")
-            sys.exit(1)
-        if not (args.aws_secret_key or env.get("AWS_SECRET_ACCESS_KEY")):
-            log(f"--aws-secret-key is required for {provider}:{resource}", "ERROR")
-            sys.exit(1)
-
-    elif provider == "digitalocean":
-        if not (args.do_token or env.get("DIGITALOCEAN_TOKEN")):
-            log(f"--do-token is required for {provider}:{resource}", "ERROR")
-            sys.exit(1)
-
+# ==============================================
+# MAIN
+# ==============================================
 def main():
     global ACTION_TYPE
-    redirector_resources = []
-    phishserver_resources = []
-
-    for provider, resources in INFRA_MAP.items():
-        for resource, path in resources.items():
-            if "redirector" in path:
-                redirector_resources.append(f"{provider}:{resource}")
-            elif "phishserver" in path or "phish" in path:
-                phishserver_resources.append(f"{provider}:{resource}")
-
-    infra_mapping_help = "Available resources\n"
-    infra_mapping_help += "-----------------------------\n"
-    infra_mapping_help += "[Redirectors]\n"
-    infra_mapping_help += "\n".join(ROLE_MAP.get("redirector", [])) or "None"
-    infra_mapping_help += "\n\n[Phishserver]\n"
-    infra_mapping_help += "\n".join(ROLE_MAP.get("phishserver", [])) or "None"
-    infra_mapping_help += "\n "
-
     parser = argparse.ArgumentParser(
-        description="Deploy and configure cloud resources",
-        epilog=infra_mapping_help,
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Deploy cloud-based infrastructure",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog = (
+        "[Redirectors]\n"
+        "  [Smart (OPSEC focused)]\n"
+        "   aws:ec2\n"
+        "   azure:vm\n"
+        "   digitalocean:droplet\n"
+        "\n"
+        "  [Dumb (Proxy everything)]\n"
+        "   aws:api_gateway\n"
+        "   aws:cloudfront\n"
+        "   azure:app\n"
+        "\n"
+        "[Phishservers]\n " + "\n ".join(ROLE_MAP["phishserver"]))
     )
-    parser.add_argument("--deploy", nargs="+", metavar="provider:resource:role")
-    parser.add_argument("--destroy", nargs="+", metavar="provider:resource:role")
-    parser.add_argument("--redirector-domain", help="Domain to point at redirector (e.g. not-malicious.com). Use CNAME record for Azure CDN (e.g. www.not-malicious.com). Not needed for AWS Lambda.")
-    parser.add_argument("--redirector-target", help="Domain to forward traffic to (e.g. totally-benign.com)")
-    parser.add_argument("--cdn-endpoint-name", help="Name for Azure CDN endpoint. Requires CNAME pointed to <cdn-endpoint-name>.azureedge.net before successful deployment")
+    parser.add_argument("--deploy",nargs="+",metavar="provider:resource:role")
+    parser.add_argument("--destroy",nargs="+",metavar="provider:resource:role")
+    parser.add_argument("--resource-domain",help="Domain to point at the resource (not-malicious.com). Not required for dumb redirectors.")
+    parser.add_argument("--redirect-to",required=True,help="Domain to forward traffic to (totally-legit.com)")
+    parser.add_argument("--get-path",type=str, help='Path for GET requests ("/api")')
+    parser.add_argument("--post-path",type=str, help='Path for POST requests ("/form")')
+    parser.add_argument("--custom-header",help='Custom header for additional hardening ("Access-X-Control: True")')
     parser.add_argument("--aws-access-key")
     parser.add_argument("--aws-secret-key")
     parser.add_argument("--ssh-key")
     parser.add_argument("--do-token")
-    parser.add_argument("--dry-run", action="store_true", help="Detail what would happen")
-    parser.add_argument("-v", "--verbose", action="store_true")
-
+    parser.add_argument("--dry-run",action="store_true",help="Detail what would happen")
+    parser.add_argument("-v","--verbose",action="store_true")
     args = parser.parse_args()
+
     ACTION_TYPE = "destroy" if args.destroy else "deploy"
-    init_log_file(ACTION_TYPE)
 
-    def is_valid_cdn_name(name):
-        return re.fullmatch(r'^[a-z][a-z0-9-]{2,62}$', name) is not None
-
-    # Validate required args for redirector deployments
+    if args.deploy or args.destroy:
+        for item in (args.deploy or args.destroy):
+            prov, res, _ = item.split(":")
+            if prov == "aws" and not (args.aws_access_key and args.aws_secret_key):
+                log("AWS requires --aws-access-key and --aws-secret-key", "ERROR")
+                sys.exit(1)
+            if prov == "digitalocean" and not args.do_token:
+                log("DigitalOcean requires --do-token", "ERROR")
+                sys.exit(1)
+                
     if args.deploy:
         for item in args.deploy:
-            try:
-                provider, resource, role = item.split(":")
-            except ValueError:
-                continue  # Already validated elsewhere
+            p,r,_ = item.split(":")
+            if r in APACHE_RES and not args.resource_domain:
+                log(f"--resource-domain required for {p}:{r} (Apache-based smart redirector)","ERROR"); sys.exit(1)
+            if r in APACHE_RES and (not args.get_path or not args.post_path):
+                log(f"--get-path and --post-path required for {p}:{r}","ERROR"); sys.exit(1)
+            if r in APACHE_RES and not args.ssh_key:
+                log(f"--ssh-key is required for {p}:{r} (Apache-based smart redirector)", "ERROR"); sys.exit(1)
+            if r in APACHE_RES and not args.custom_header:
+                log(f"--custom-header is required for {p}:{r} (Apache-based smart redirector)", "ERROR"); sys.exit(1)
+    
+    base_env = os.environ.copy()
+    if args.aws_access_key:  base_env["AWS_ACCESS_KEY_ID"]=args.aws_access_key
+    if args.aws_secret_key: base_env["AWS_SECRET_ACCESS_KEY"]=args.aws_secret_key
+    if args.do_token:        base_env["DIGITALOCEAN_TOKEN"]=args.do_token
 
-            if role == "redirector":
-                if provider == "azure" and resource == "cdn":
-                    if not args.redirector_domain:
-                        log("--redirector-domain is required for azure:cdn redirector.", "ERROR")
-                        sys.exit(1)                
-                    if not args.redirector_target:
-                        log("--redirector-target is required for azure:cdn redirector.", "ERROR")
-                        sys.exit(1)
-                    if not args.cdn_endpoint_name:
-                        log("--cdn-endpoint-name is required for azure:cdn redirector.", "ERROR")
-                        sys.exit(1)
-                    if not is_valid_cdn_name(args.cdn_endpoint_name):
-                        log("--cdn-endpoint-name must be 3–63 chars, lowercase alphanumeric or dashes, and start with a letter.", "ERROR")
-                        sys.exit(1)
-                elif provider == "aws" and resource == "lambda":
-                    if not args.redirector_target:
-                        log("--redirector-target is required for aws:lambda redirector.", "ERROR")
-                        sys.exit(1)
-                else:
-                    # For other redirectors, require both redirector-domain and redirector-target
-                    if not args.redirector_domain or not args.redirector_target:
-                        log("--redirector-domain and --redirector-target are required for redirector deployments except aws:lambda.", "ERROR")
-                        sys.exit(1)
-
-    base_env_vars = os.environ.copy()
-    if args.aws_access_key and args.aws_secret_key:
-        base_env_vars.update({
-            "AWS_ACCESS_KEY_ID": args.aws_access_key,
-            "AWS_SECRET_ACCESS_KEY": args.aws_secret_key
-        })
-    if args.do_token:
-        base_env_vars["DIGITALOCEAN_TOKEN"] = args.do_token
-    if args.redirector_target:
-        base_env_vars["REDIRECT_TARGET"] = args.redirector_target
-
-    outputs_by_deployment = {}
     hosts_by_role = {}
+    outputs = {}
+    deployed = False
 
-    deployed_redirector = False  # Track if any redirector was deployed
+    items = args.deploy or args.destroy or []
+    deployments = parse_deploy_argument(items)
+    for prov, res, role, path in deployments:
+        init_log_file(ACTION_TYPE, prov, res)
 
-    if args.deploy:
-        required_ssh_key_pairs = [("aws", "ec2"), ("azure", "vm"), ("digitalocean", "droplet")]
-        for item in args.deploy:
-            try:
-                provider, resource, role = item.split(":")
-            except ValueError:
-                continue  # Already validated elsewhere
+    for prov,res,role,path in deployments:
+        env,vars = prepare_env_and_vars(prov,res,args,base_env)
 
-            if (provider, resource) in required_ssh_key_pairs and not args.ssh_key:
-                log(f"--ssh-key is required for {provider}:{resource}:{role}", "ERROR")
-                sys.exit(1)
+        if args.dry_run:
+            blind = res in BLIND_RES
+            action = "destroy" if args.destroy else "deploy"
+            log(f" {prov}:{res} will be {action}ed as a {role}")
 
-        deployments = parse_deploy_argument(args.deploy)
-
-        for provider, resource, role, path in deployments:
-            validate_credentials_for_deployment(provider, resource, args, base_env_vars)
-            env_vars, extra_vars = prepare_env_and_vars(provider, resource, args, base_env_vars)
-            try:
-                if args.dry_run:
-                    log(f"Would deploy {provider}:{resource} as role '{role}'")
-
-                    if role == "redirector":
-                        if provider == "azure" and resource == "cdn":
-                            log(f"{args.redirector_domain} will be a CNAME pointing to {args.cdn_endpoint_name}.azureedge.net, which will push traffic to {args.redirector_target}")
-                        elif provider == "aws" and resource == "lambda":
-                            log(f"AWS Lambda will forward to {args.redirector_target}")
-                        else:
-                            log(f"{args.redirector_domain} should point to deployed IP, which will push traffic to {args.redirector_target}")
-                            log("certbot + apache2 config will be applied via Ansible")
-
-                else:
-                    run_terraform(path, env_vars, destroy=False, extra_vars=extra_vars, verbose=args.verbose)
-                    outputs = extract_outputs(path)
-                    outputs_by_deployment[f"{provider}:{resource}:{role}"] = outputs
-                    ip = extract_ip_from_output(outputs)
-                    if role not in hosts_by_role:
-                        hosts_by_role[role] = []
-                    if ip:
-                        hosts_by_role[role].append((ip, provider, args.ssh_key or ""))
-
-                    if role == "redirector":
-                        deployed_redirector = True  # Mark that a redirector was deployed
-            except subprocess.CalledProcessError:
-                log(f"Terraform failed for {provider}:{resource}:{role}", "ERROR")
-                sys.exit(1)
-
-    if args.destroy:
-        deployments = parse_deploy_argument(args.destroy)
-        for provider, resource, role, path in deployments:
-            validate_credentials_for_deployment(provider, resource, args, base_env_vars)
-            env_vars, extra_vars = prepare_env_and_vars(provider, resource, args, base_env_vars)
-            try:
-                if args.dry_run:
-                    log(f"Would destroy {provider}:{resource}:{role} in {path}")
-                else:
-                    run_terraform(path, env_vars, destroy=True, extra_vars=extra_vars, verbose=args.verbose)
-            except subprocess.CalledProcessError:
-                log(f"Terraform destroy failed for {provider}:{resource}:{role}", "ERROR")
-                sys.exit(1)
-
-    # Wait 30 seconds before running Ansible if a redirector was deployed and not dry-run
-    if (deployed_redirector or hosts_by_role) and not args.dry_run:        
-        log("Waiting 30 seconds before running Ansible...")
-        time.sleep(30)
-
-    if hosts_by_role:
-        build_inventory(hosts_by_role)
-
-    if not args.dry_run and not args.destroy and hosts_by_role:
-        if args.redirector_domain and args.redirector_target:
-            set_redirector_group_vars(args.redirector_domain, args.redirector_target)
-        run_ansible(verbose=args.verbose)
-
-
-    if outputs_by_deployment and not args.dry_run:
-        log("Deployment complete", "SUCCESS")
-        print("\n====== Deployed Resources Summary ======")
-        for name, output in outputs_by_deployment.items():
-            provider, resource, role = name.split(":")
-            ip = extract_ip_from_output(output)
-            lambda_url = extract_lambda_url(output) if (provider == "aws" and resource == "lambda") else None
-
-            access_command = None
-            for key, val in output.items():
-                if key.lower().startswith("access"):
-                    access_command = val.get("value") if isinstance(val, dict) else val
-                    break
-
-            if lambda_url:
-                print(f"{name}: {lambda_url}\n")
+            if blind:
+                log(f"  Traffic flow: {prov}:{res} -> {args.redirect_to}")
             else:
-                print(f"{name}: {ip}\n")
+                domain = args.resource_domain or "???.example.com"
+                log(f"  Traffic flow: {domain} -> {prov} Apache -> {args.redirect_to}")
+                log(f"  Required paths: GET {args.get_path} || POST {args.post_path}")
+                log(f"  Required custom header: '{args.custom_header}'")
+                log(f"  SSH key used: {args.ssh_key}")
+
+            continue
+
+        run_terraform(path, env, destroy=bool(args.destroy), extra_vars=vars, verbose=args.verbose)
+        if not args.destroy:
+            out = extract_outputs(path)
+            outputs[f"{prov}:{res}:{role}"] = out
+            ip = extract_ip(out)
+            url = extract_url(out)
+            if ip:
+                hosts_by_role.setdefault(role, []).append((ip,prov,args.ssh_key or ""))
+            if role=="redirector": deployed=True
+
+    # ——— ANSIBLE (only Apache) ———
+    if hosts_by_role and not args.dry_run and not args.destroy:
+        log("Waiting 30s for boot…")
+        time.sleep(30)
+        build_inventory(hosts_by_role)
+        set_redirector_group_vars(
+            domain=args.resource_domain or "",
+            target=args.redirect_to,
+            get_path=args.get_path,
+            post_path=args.post_path,
+            custom_header=args.custom_header
+        )
+        run_ansible(args.verbose)
+
+    # ——— SUMMARY ———
+    if outputs and not args.dry_run:
+        log("DEPLOYMENT COMPLETE", "SUCCESS")
+        print()
+
+        for key, out in outputs.items():
+            prov, res, role = key.split(":")
+            name = f"{prov}:{res}:{role}"
+
+            ip  = extract_ip(out)
+            url = extract_url(out)
+            cdn = out.get("cdn_endpoint_name", {}).get("value")
+            cf  = out.get("cloudfront_url", {}).get("value")
+            lb  = out.get("load_balancer_dns", {}).get("value")
+            gw  = out.get("api_gateway_url", {}).get("value")
+            pa  = out.get("proxy_app_url", {}).get("value")
+
+            value = ip or url or cdn or cf or lb or gw or "(pending)"
+
+            print(f"{bcolors.OKGREEN}{name} -> {bcolors.ENDC} {value}\n")
 
             show_followup(
-                provider=provider,
-                resource=resource,
+                provider=prov,
+                resource=res,
                 role=role,
-                domain=args.redirector_domain,
-                target=args.redirector_target,
+                domain=args.resource_domain or "",
+                target=args.redirect_to,
                 ip=ip,
-                cdn_endpoint_name=args.cdn_endpoint_name,
-                lambda_url=lambda_url,
-                access_command=access_command,
-                ssh_key=args.ssh_key  # pass ssh_key as well for fallback if needed
+                cdn_endpoint_name=cdn,
+                api_gateway_url=url,
+                cloudfront_url=cf,
+                proxy_app_url=pa,
+                get_path=args.get_path,
+                post_path=args.post_path,
+                custom_header=args.custom_header,
+                ssh_key=args.ssh_key
             )
+    if log_file: log_file.close()
 
-    if log_file:
-        log_file.close()
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
