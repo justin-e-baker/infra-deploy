@@ -95,3 +95,4 @@ AWS/Azure/DigitalOcean access
 ### To do
 * Clean up dumb redirectors to remove GET & POST paths
 * Add naming functionality for dumb redirectors
+* Add option to feed config values from yaml instead of command line parameters
