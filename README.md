@@ -76,9 +76,9 @@ options:
 ```
 
 ### Examples
-Deploy a smart redirector on an AWS EC2 instance that will have temporary.org point to it and proxy to fake.com if custom header, GET & POST paths are validated and print all Terraform and Ansible output:
+Deploy a smart redirector on an AWS EC2 instance that will have temporary.org point to it and proxy to fake.com if the custom header, GET & POST paths are validated and print all Terraform and Ansible output:
 ```bash
-python3 ./script.py --deploy aws:ec2:redirector --aws-access-key <access_key> --aws-secret-key <secret_key> --redirect-to fake.com --resource-domain temporary.org --get-path "/jquery/user/preferences" --post-path "/api/v2/jquery/settings/update" --ssh-key <private_ssh_key_path> --custom-header "Access-X: True -v"
+python3 ./script.py --deploy aws:ec2:redirector --aws-access-key <access_key> --aws-secret-key <secret_key> --resource-domain temporary.org --redirect-to fake.com --custom-header "Access-X: True" --get-path "/jquery/user/preferences" --post-path "/api/v2/jquery/settings/update" --ssh-key <private_ssh_key_path> -v
 ```
 
 Deploy a dumb redirector on a randomly-named Azure App Service that will proxy all traffic to notC2.com:
