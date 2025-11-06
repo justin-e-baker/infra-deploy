@@ -1,0 +1,10 @@
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Runtime
+logs/
+ansible/inventory.ini
+ansible/group_vars/redirector.yml
