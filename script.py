@@ -460,7 +460,7 @@ def process_deployment(args):
 # MAIN – reads action from YAML + optional --config
 # ----------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Deploy / destroy from a YAML file",formatter_class=argparse.RawDescriptionHelpFormatter,
+    parser = argparse.ArgumentParser(description="Deploy / destroy cloud infrastructure",formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "[Redirectors]\n"
             "   [Smart] (OPSEC focused)\n"

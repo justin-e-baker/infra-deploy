@@ -33,7 +33,7 @@ Applicable follow-on commands are provided according to the specific resource de
 ```
 usage: script.py [-h] -f FILE [-d] [-v]
 
-Deploy / destroy from a YAML file
+Deploy / destroy cloud infrastructure
 
 options:
   -h, --help            show this help message and exit
