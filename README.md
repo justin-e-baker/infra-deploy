@@ -2,7 +2,7 @@
 Dynamically deploy a redirector or phishserver.
 
 ## Features
-This script is designed (i.e. vibe coded) to deploy infrastructure and configure it according to the specified role, either (smart/dumb) redirector or phishserver. Available options:
+This script is designed (i.e. vibe coded) to deploy infrastructure and configure it according to the specified YAML, supporting either a (smart/dumb) redirector or phishserver. Available options are:
 * AWS EC2 instance
 * AWS API Gateway with Lambda function
 * AWS CloudFront distribution
@@ -31,43 +31,26 @@ Applicable follow-on commands are provided according to the specific resource de
 
 ## Execution
 ```
-usage: script.py [-h] [--deploy provider:resource:role [provider:resource:role ...]] [--destroy provider:resource:role [provider:resource:role ...]]
-                 [--resource-domain RESOURCE_DOMAIN] --redirect-to REDIRECT_TO [--get-path GET_PATH] [--post-path POST_PATH]
-                 [--custom-header CUSTOM_HEADER] [--aws-access-key AWS_ACCESS_KEY] [--aws-secret-key AWS_SECRET_KEY] [--ssh-key SSH_KEY]
-                 [--do-token DO_TOKEN] [--dry-run] [-v]
+usage: script.py [-h] -f FILE [-d] [-v]
 
-Deploy cloud-based infrastructure
+Deploy / destroy from a YAML file
 
 options:
   -h, --help            show this help message and exit
-  --deploy provider:resource:role [provider:resource:role ...]
-  --destroy provider:resource:role [provider:resource:role ...]
-  --resource-domain RESOURCE_DOMAIN
-                        Domain to point at the resource (not-malicious.com). Not required for dumb redirectors.
-  --redirect-to REDIRECT_TO
-                        Domain to forward traffic to (totally-legit.com)
-  --get-path GET_PATH   Path for GET requests ("/api")
-  --post-path POST_PATH
-                        Path for POST requests ("/form")
-  --custom-header CUSTOM_HEADER
-                        Custom header for additional hardening ("Access-X-Control: True")
-  --aws-access-key AWS_ACCESS_KEY
-  --aws-secret-key AWS_SECRET_KEY
-  --ssh-key SSH_KEY
-  --do-token DO_TOKEN
-  --dry-run             Detail what would happen
-  -v, --verbose
+  -f FILE, --file FILE  Path to config file
+  -d, --dry-run         Show what would happen
+  -v, --verbose         Show Terraform/Ansible output
 
 [Redirectors]
-  [Smart] (OPSEC focused)
-   aws:ec2
-   azure:vm
-   digitalocean:droplet
+   [Smart] (OPSEC focused)
+    aws:ec2
+    azure:vm
+    digitalocean:droplet
 
-  [Dumb] (Proxy everything)
-   aws:api_gateway
-   aws:cloudfront
-   azure:app
+   [Dumb] (Proxy everything)
+    aws:api_gateway
+    aws:cloudfront
+    azure:app
 
 [Phishservers]
  aws:ec2
@@ -76,23 +59,30 @@ options:
 ```
 
 ### Examples
-Deploy a smart redirector on an AWS EC2 instance that will have temporary.org point to it and proxy to fake.com if the custom header, GET & POST paths are validated and print all Terraform and Ansible output:
-```bash
-python3 ./script.py --deploy aws:ec2:redirector --aws-access-key <access_key> --aws-secret-key <secret_key> --resource-domain temporary.org --redirect-to fake.com --custom-header "Access-X: True" --get-path "/jquery/user/preferences" --post-path "/api/v2/jquery/settings/update" --ssh-key <private_ssh_key_path> -v
-```
+Deploy a smart redirector on an AWS EC2 instance that will have temporary.org point to it and proxy to fake.com if the custom header, GET & POST paths are validated:
+```yaml
+action: deploy
+provider: aws
+resource: ec2
+role: redirector
+redirect_to: "https://fake.com"
 
-Deploy a dumb redirector on a randomly-named Azure App Service that will proxy all traffic to notC2.com:
-```bash
-python3 ./script.py --deploy azure:app:redirector --redirect-to notC2.com -v
+resource_domain: "temporary.org"
+get_path: "/api"
+post_path: "/submit"
+custom_header: "Access-X: true"
+ssh_key: "~/.ssh/id_ed25519"
+
+aws_access_key: "AKIA..."
+aws_secret_key: "wJal..."
 ```
 
 ### Requirements
-Python3
-Terraform
-Ansible
-AWS/Azure/DigitalOcean access
+* Python3
+* Terraform
+* Ansible
+* AWS/Azure/DigitalOcean access
 
 ### To do
 * Clean up dumb redirectors to remove GET & POST paths
 * Add naming functionality for dumb redirectors
-* Add option to feed config values from yaml instead of command line parameters

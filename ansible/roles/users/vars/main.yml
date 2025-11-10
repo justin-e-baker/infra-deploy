@@ -1,5 +1,5 @@
 users:
-  - username: <username>
+  - username: <user>
     shell: /usr/bin/zsh
     groups: ["sudo"]
     ssh_key: "<ssh pub key output>"

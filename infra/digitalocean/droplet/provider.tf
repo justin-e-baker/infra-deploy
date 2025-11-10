@@ -19,3 +19,4 @@ provider "digitalocean" {
 data "digitalocean_ssh_key" "<ssh pubkey name>" {
   name = "<ssh_pubkey_in_digitalocean>"
 }
+

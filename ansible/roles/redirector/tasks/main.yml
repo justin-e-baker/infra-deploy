@@ -1,16 +1,45 @@
 - name: Redirector Setup
   ansible.builtin.debug:
     msg: "Setting up Apache on Redirector"
+    
+- name: Wait for apt/dpkg locks to be released
+  ansible.builtin.shell: |
+    while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null | grep -q .; do
+      echo "Waiting for package manager locks to clear..."
+      sleep 10
+    done
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: lock_wait
+  retries: 30
+  delay: 10
+  until: lock_wait.rc == 0
 
 - name: Install Tmux, Apache, Certbot & Zsh
-  ansible.builtin.apt:
-    update_cache: true
-    pkg:
-      - tmux
+  apt:
+    name:
       - apache2
       - certbot
       - python3-certbot-apache
       - zsh
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  retries: 5
+  delay: 10
+  register: apt_install
+  until: apt_install is succeeded
+
+#- name: Install Tmux, Apache, Certbot & Zsh
+#  ansible.builtin.apt:
+#    update_cache: true
+#    pkg:
+#      - tmux
+#      - apache2
+#      - certbot
+#      - python3-certbot-apache
+#      - zsh
 
 - name: Enable Apache rewrite module
   command: a2enmod rewrite

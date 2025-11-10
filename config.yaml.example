@@ -1,0 +1,36 @@
+# config.yaml.example
+
+# ------------------------------------------------------------------
+# Required redirector keys
+# ------------------------------------------------------------------
+action: deploy                    # deploy | destroy
+provider: aws                     # aws | azure | digitalocean
+resource: cloudfront              # See supported list below
+role: redirector                  # redirector | phishserver
+redirect_to: "https://c2-domain.com"
+
+# ------------------------------------------------------------------
+# Smart redirector keys (only for ec2, vm, droplet)
+# ------------------------------------------------------------------
+#resource_domain: "redirect.example.com"
+#get_path: "/api"
+#post_path: "/submit"
+#custom_header: "Access-X: true"
+#ssh_key: "~/.ssh/id_ed25519"
+
+# ------------------------------------------------------------------
+# Provider credentials (uncomment as needed)
+# ------------------------------------------------------------------
+#aws_access_key: "AKIA..."
+#aws_secret_key: "wJal..."
+#do_token: "dop_..."
+
+# ------------------------------------------------------------------
+# Supported combinations
+# ------------------------------------------------------------------
+# [Redirectors]
+#   Smart: aws:ec2, azure:vm, digitalocean:droplet
+#   Dumb:  aws:api_gateway, aws:cloudfront, azure:app
+#
+# [Phishservers]
+#   aws:ec2, azure:vm, digitalocean:droplet
