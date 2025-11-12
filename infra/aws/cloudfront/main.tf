@@ -1,4 +1,3 @@
-# infra/aws/cloudfront/main.tf ← REPLACE ENTIRE FILE
 resource "random_string" "suffix" {
   length  = 12
   special = false
@@ -7,7 +6,6 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  # ← RANDOM NAME EVERY TIME (unless you pass --distribution-name)
   name       = var.distribution_name != null ? var.distribution_name : "${random_string.suffix.result}"
   target     = var.redirector_target
   get_paths  = var.get_path  != "" ? [trimsuffix(var.get_path,  "/")] : ["*"]
